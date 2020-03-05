@@ -4,9 +4,9 @@
  */
 
 // 引入邮件类
-require_once "../vendor/phpmailer/phpmailer/src/PHPMailer.php";
-require_once "../vendor/phpmailer/phpmailer/src/Exception.php";
-require_once "../vendor/phpmailer/phpmailer/src/SMTP.php";
+require_once "vendor/phpmailer/phpmailer/src/PHPMailer.php";
+require_once "vendor/phpmailer/phpmailer/src/Exception.php";
+require_once "vendor/phpmailer/phpmailer/src/SMTP.php";
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 use PHPMailer\PHPMailer\SMTP;
@@ -15,11 +15,12 @@ class SwooleThread
 {
 	private $serv;
 	function __construct(){
-		$this->serv = new Swoole\this->Server("127.0.0.1", 9501);
+		$this->serv = new Swoole\Server("127.0.0.1", 9501);
 
-		//设置异步任务的工作进程数量
 		$this->serv->set([
-			'task_worker_num' => 4,
+			'task_worker_num' => 4, //设置异步任务的工作进程数量
+			'daemonize' => true, //是否守护进程
+			'log_file' => '/alidata/log/swoole.log'
 		]);
 
 		// 绑定任务方法
@@ -38,7 +39,7 @@ class SwooleThread
 	 * @DateTime 2020-03-05
 	 * @return   [type]     [description]
 	 */
-	private function onReceive($serv, $fd, $from_id, $data){
+	public function onReceive($serv, $fd, $from_id, $data){
 		//投递异步任务
 	    $task_id = $this->serv->task($data);
 	    echo "Dispath AsyncTask: id=$task_id\n";
@@ -72,24 +73,21 @@ class SwooleThread
 	 * @param    [type]     $data    [description]
 	 * @return   [type]              [description]
 	 */
-	private function onTask($serv, $task_id, $from_id, $data){
+	public function onTask($serv, $task_id, $from_id, $data){
 		echo "任务参数data:".$data;
 		$data = json_decode($data,true);
 		switch ($data['task_type']) {
 			case 'SEND_MAIL':
-				return $this->mailToGuys($data);
+				$this->mailToGuys($data);
 				break;
 			case 'HANDLE_LARGE_DATA':
-				return true;
 				break;
 			
 			default:
-				return false;
 				break;
 		}
-		echo "New AsyncTask[id=$task_id]".PHP_EOL;
 	    //返回任务执行的结果
-	    $this->serv->finish("$data -> OK");
+	    $this->serv->finish("AsyncTask[$task_id] OK");
 	}
 
 	/**
@@ -101,7 +99,7 @@ class SwooleThread
 	 * @param    [type]     $data    [description]
 	 * @return   [type]              [description]
 	 */
-	private function onFinish($serv, $task_id, $data){
+	public function onFinish($serv, $task_id, $data){
 		echo "AsyncTask[$task_id] Finish: $data".PHP_EOL;
 	}
 
@@ -112,7 +110,7 @@ class SwooleThread
 	 * @param    [type]     $data [邮件参数]
 	 * @return   [type]           [description]
 	 */
-	public function mailToGuys($data){
+	private function mailToGuys($data){
 		if(empty($data) || empty($data['email'])){
 			return false;
 		}
@@ -151,13 +149,13 @@ class SwooleThread
 	    //邮件正文不支持HTML的备用显示
 	    $phpMailerObj->AltBody = "这是一个纯文本的身体在非营利的HTML电子邮件客户端";
 	    //添加附件
-	    if($data['attachment']){
+	    if(isset($data['attachment'])){
 	      $phpMailerObj->AddAttachment($data['attachment']);
 	    }
 	    //发送邮件
 	    if(!$phpMailerObj->send()){
 	        return false;
-	        // return $phpMailerObj->ErrorInfo;
+	        // echo $phpMailerObj->ErrorInfo;
 	    }else{
 	        return true;
 	    }
